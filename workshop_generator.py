@@ -4,6 +4,8 @@ from datetime import datetime
 from sys import argv
 import argparse
 
+HTTP_OKAY = 200
+
 BASE_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id="
 
 RESOURCE_LINE     = 'resource.AddWorkshop("{}") -- {}\n'
@@ -11,6 +13,17 @@ RESOURCE_LINE     = 'resource.AddWorkshop("{}") -- {}\n'
 HEADER =  '-- Auto-generated workshop file of collection {} ({})\n'
 HEADER += '-- Generated on {}\n\n\n'
 
+QUIET_MODE = False
+
+def die(string, code=0):
+    quiet_print(string)
+    exit(code)
+
+def quiet_print(string):
+    if QUIET_MODE:
+        return
+
+    print(string)
 
 def get_header(title, url):
     header = HEADER.format(title, url, datetime.now())
@@ -31,17 +44,21 @@ def strip_url(url):
 
 
 def get_site_content(url):
-    print("Getting content of {}...".format(url))
+    quiet_print("Getting content of {}...".format(url))
     
-    site_content = requests.get(url).text
+    response = requests.get(url)
+    if response.status_code != HTTP_OKAY:
+        die("ERROR! {} Did not return status code 200. Is the collection ID correct?".format(url))  
 
+    site_content = response.text
+    
     return site_content
 
 
 def get_collection_items_from_soup(soup):
     collection_items = soup.find_all("div", {"class": "collectionItemDetails"})
 
-    print("Found {} different collection items...".format(len(collection_items)))
+    quiet_print("Found {} different collection items...".format(len(collection_items)))
 
     return collection_items
 
@@ -55,13 +72,13 @@ def get_workshop_title_from_soup(soup):
 def get_link_tuples_from_collection_items(collection_items):
     link_tuples = []
 
-    for item in collection_items:
+    for i, item in enumerate(collection_items):
         link_object = item.find("a", href=True)
     
         href = link_object['href']
         name = link_object.text
 
-        print(name, '==>', href)
+        quiet_print("{}. {} ==> {}".format(i + 1, name, href))
 
         link = strip_url(href)
     
@@ -75,8 +92,8 @@ def write_workshop_file(filename, header, link_tuples):
         f = open(filename, 'w')
         function_to_use = f.write
     except IOError:
-        print("Failed to open file {} for writing... Defaulting to stdout!".format(filename))
-        function_to_use = print
+        quiet_print("Failed to open file {} for writing... Defaulting to stdout!".format(filename))
+        function_to_use = quiet_print
 
     function_to_use(header)
 
@@ -85,7 +102,8 @@ def write_workshop_file(filename, header, link_tuples):
 
         function_to_use(line)
 
-    if function_to_use != print:
+    if function_to_use != quiet_print:
+        f.write('\n')
         f.close()
        
 
@@ -99,8 +117,10 @@ def parse_args():
                         help='The filename to write to. Defaults to "workshop.lua".',
                         default='workshop.lua')
     parser.add_argument('-i', '--id', dest='collection_id',
-                        help='The collection ID to replicate in the generated LUA file.',
+                        help="The collection ID to replicate in the generated LUA file. Defaults to my favorite server's collection",
                         default='1182709177')
+
+    parser.add_argument('-q', '--quiet', dest='quiet_mode', help='Want this darn script to shutup (no output)? Set this flag!', action='store_true', default=False)
 
     return parser.parse_args()
     
@@ -110,6 +130,7 @@ if __name__ == "__main__":
 
     args = parse_args()
 
+    QUIET_MODE = args.quiet_mode
 
     collection_url = get_collection_url(args.collection_id)
 
