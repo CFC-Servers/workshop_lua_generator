@@ -16,7 +16,7 @@ HEADER += '-- Generated on {}\n\n\n'
 QUIET_MODE = False
 
 def die(string, code=0):
-    quiet_print(string)
+    print(string)
     exit(code)
 
 def quiet_print(string):
