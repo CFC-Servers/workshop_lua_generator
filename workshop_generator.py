@@ -1,8 +1,8 @@
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from sys import argv
-import argparse
+
 
 HTTP_OKAY = 200
 
