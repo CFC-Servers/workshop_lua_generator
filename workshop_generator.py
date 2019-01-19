@@ -179,6 +179,8 @@ class WorkshopGenerator():
                 collection_id = self.collection_id
             else:
                 raise NoWorkshopID()
+        else:
+            self.collection_id = collection_id
 
         collection_url = self._get_collection_url(collection_id)
 
