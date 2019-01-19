@@ -1,146 +1,206 @@
-import argparse
 import requests
+import os
 from bs4 import BeautifulSoup
 from datetime import datetime
 
 
-HTTP_OKAY = 200
+class WorkshopGeneratorError(Exception):
+    pass
 
-BASE_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id="
+class NoWorkshopID(WorkshopGeneratorError):
+    pass
 
-RESOURCE_LINE     = 'resource.AddWorkshop("{}") -- {}\n'
+class InvalidWorkshopID(WorkshopGeneratorError):
+    pass
 
-HEADER =  '-- Auto-generated workshop file of collection {} ({})\n'
-HEADER += '-- Generated on {}\n\n\n'
-
-QUIET_MODE = False
-
-IS_MAIN = False
-
-
-def die(string, code=0):
-    print(string)
-    exit(code)
-
-def quiet_print(string):
-    if QUIET_MODE or not IS_MAIN:
-        return
-
-    print(string)
-
-def get_header(title, url):
-    header = HEADER.format(title, url, datetime.now())
-
-    return header
+class NoCollection(WorkshopGeneratorError):
+    pass
 
 
-def get_collection_url(workshop_id):
-    url = "{}{}".format(BASE_WORKSHOP_URL, workshop_id)
+class WorkshopGenerator():
+    HTTP_OKAY = 200
 
-    return url
+    BASE_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id="
 
+    RESOURCE_LINE     = 'resource.AddWorkshop("{}") -- {}\n'
 
-def strip_url(url):
-    stripped = url.replace(BASE_WORKSHOP_URL, '')
-
-    return stripped
-
-
-def get_site_content(url):
-    quiet_print("Getting content of {}...".format(url))
+    HEADER =  '-- Auto-generated workshop file of collection {} ({})\n'
+    HEADER += '-- Generated on {}\n\n\n'
     
-    response = requests.get(url)
-    if response.status_code != HTTP_OKAY:
-        die("ERROR! {} Did not return status code 200. Is the collection ID correct?".format(url))  
+    DEFAULT_FILENAME = 'workshop.lua'
 
-    site_content = response.text
+    def __init__(self, collection_id=None, output_directory='', filename='', suppress_output=True):
+        self.collection_id = collection_id
+
+        self.output_dir = output_directory
+
+        self.filename = filename if filename else self.DEFAULT_FILENAME
+
+        self.quiet_mode = suppress_output
+
+        self.collection = None
+
+    def set_filename(self, filename):
+        self.filename = filename
+
+    def set_output_dir(self, output_dir):
+        self.output_dir = output_dir
+
+    def set_collection_id(self, collection_id):
+        self.collection_id = collection_id
+
+    def set_quiet_mode_enabled(self, quiet_mode_enabled):
+        self.quiet_mode = quiet_mode_enabled
+
+    def _quiet_print(self, string):
+        if self.quiet_mode:
+            return
     
-    return site_content
+        print(string)
 
 
-def get_collection_items_from_soup(soup):
-    collection_items = soup.find_all("div", {"class": "collectionItemDetails"})
+    def _get_header(self, title, url):
+        header = self.HEADER.format(title, url, datetime.now())
 
-    quiet_print("Found {} different collection items...".format(len(collection_items)))
-
-    return collection_items
+        return header
 
 
-def get_workshop_title_from_soup(soup):
-    workshop_title = soup.find("div", {"class": "workshopItemTitle"})
+    def _get_collection_url(self, workshop_id):
+        url = "{}{}".format(self.BASE_WORKSHOP_URL, workshop_id)
 
-    return workshop_title.text
+        return url
 
 
-def get_link_tuples_from_collection_items(collection_items):
-    link_tuples = []
+    def _strip_url(self, url):
+        stripped = url.replace(self.BASE_WORKSHOP_URL, '')
 
-    for i, item in enumerate(collection_items):
-        link_object = item.find("a", href=True)
+        return stripped
+
+
+    def _get_site_content(self, url):
+        self._quiet_print("Getting content of {}...".format(url))
     
-        href = link_object['href']
-        name = link_object.text
+        response = requests.get(url)
+        if response.status_code != self.HTTP_OKAY:
+            raise ConnectionError("{} Did not return status code 200. Is the collection ID correct?".format(url))
 
-        quiet_print("{}. {} ==> {}".format(i + 1, name, href))
+        site_content = response.text
 
-        link = strip_url(href)
+        # Not a collection if this isn't in the page contents
+        if not 'subscribeCollection' in site_content:
+            raise InvalidWorkshopID()
     
-        link_tuples.append( (link, link_object.text) )
-
-    return link_tuples
+        return site_content
 
 
-def write_workshop_file(filename, workshop_collection):
-    try:
-        f = open(filename, 'w')
+    def _get_collection_items_from_soup(self, soup):
+        collection_items = soup.find_all("div", {"class": "collectionItemDetails"})
+
+        self._quiet_print("Found {} different collection items...".format(len(collection_items)))
+    
+        return collection_items
+
+
+    def _get_workshop_title_from_soup(self, soup):
+        workshop_title = soup.find("div", {"class": "workshopItemTitle"})
+
+        return workshop_title.text
+
+
+    def _get_link_tuples_from_collection_items(self, collection_items):
+        link_tuples = []
+
+        for i, item in enumerate(collection_items):
+            link_object = item.find("a", href=True)
+    
+            href = link_object['href']
+            name = link_object.text
+
+            self._quiet_print("{}. {} ==> {}".format(i + 1, name, href))
+
+            link = self._strip_url(href)
+    
+            link_tuples.append( (link, link_object.text) )
+
+        return link_tuples
+
+
+    def write_workshop_file(self, workshop_collection = None, filename = None, output_dir = None):
+        if workshop_collection == None:
+            if self._collection_id_set():
+                workshop_collection = self.get_workshop_collection()
+            else:
+                raise NoCollection()
+
+        if filename == None:
+            filename = self.filename
+
+        if output_dir == None:
+            output_dir = self.output_dir
+
+        file_path = '{}{}{}'.format(output_dir, os.sep, filename) if output_dir else filename
+
+        f = open(file_path, 'w')
         function_to_use = f.write
-    except IOError:
-        quiet_print("Failed to open file {} for writing... Defaulting to stdout!".format(filename))
-        function_to_use = quiet_print
-
-    header = get_header(workshop_collection['title'], workshop_collection['url'])
+        
+        header = self._get_header(workshop_collection['title'], workshop_collection['url'])
     
-    function_to_use(header)
+        function_to_use(header)
 
-    for item in workshop_collection['items']:
-        line = RESOURCE_LINE.format(item['id'], item['name'])
+        for item in workshop_collection['items']:
+            line = self.RESOURCE_LINE.format(item['id'], item['name'])
 
-        function_to_use(line)
+            function_to_use(line)
 
-    if function_to_use != quiet_print:
-        quiet_print('\nWorkshop file written to {}'.format(filename))
+        self._quiet_print('\nWorkshop file written to {}'.format(file_path))
         f.write('\n')
         f.close()
-       
+ 
 
-def get_workshop_collection(collection_id):
-    collection_url = get_collection_url(collection_id)
+    def _collection_id_set(self):
+        if self.collection_id:
+            return True
 
-    site_content = get_site_content(collection_url)
+        return False
 
-    soup = BeautifulSoup(site_content, "html.parser")
+    def get_workshop_collection(self, collection_id = None):
+        if collection_id == None:
+            if self._collection_id_set():
+                collection_id = self.collection_id
+            else:
+                raise NoWorkshopID()
 
-    collection_items = get_collection_items_from_soup(soup)
+        collection_url = self._get_collection_url(collection_id)
 
-    link_tuples = get_link_tuples_from_collection_items(collection_items)
+        site_content = self._get_site_content(collection_url)
 
-    workshop_title = get_workshop_title_from_soup(soup)
+        soup = BeautifulSoup(site_content, "html.parser")
 
-    collection = {}
-    collection['title'] = workshop_title
-    collection['url']   = collection_url
-    collection['items'] = []
+        collection_items = self._get_collection_items_from_soup(soup)
 
-    for link_tuple in link_tuples:
-        item = {'id': link_tuple[0], 'name': link_tuple[1]}
+        link_tuples = self._get_link_tuples_from_collection_items(collection_items)
 
-        collection['items'].append(item)
+        workshop_title = self._get_workshop_title_from_soup(soup)
 
-    return collection
+        collection = {}
+        collection['title'] = workshop_title
+        collection['url']   = collection_url
+        collection['items'] = []
+
+        for link_tuple in link_tuples:
+            item = {'id': link_tuple[0], 'name': link_tuple[1]}
+
+            collection['items'].append(item)
+
+        self.collection = collection
+
+        return collection
 
 
 
 if __name__ == "__main__":
+    import argparse
+    
     IS_MAIN = True
     
     parser = argparse.ArgumentParser(description='Generates workshop.lua files for GMod servers.')
@@ -159,12 +219,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    wg = WorkshopGenerator(filename=args.filename, output_directory=args.output_directory, collection_id=args.collection_id, suppress_output=args.quiet_mode)
 
-    QUIET_MODE = args.quiet_mode
-
-    filename = '{}/{}'.format(args.output_directory, args.filename)
-
-    workshop_collection = get_workshop_collection(args.collection_id)
-
-    write_workshop_file(filename, workshop_collection)
+    wg.write_workshop_file()
 
