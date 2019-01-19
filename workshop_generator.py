@@ -15,12 +15,15 @@ HEADER += '-- Generated on {}\n\n\n'
 
 QUIET_MODE = False
 
+IS_MAIN = False
+
+
 def die(string, code=0):
     print(string)
     exit(code)
 
 def quiet_print(string):
-    if QUIET_MODE:
+    if QUIET_MODE or not IS_MAIN:
         return
 
     print(string)
@@ -87,7 +90,7 @@ def get_link_tuples_from_collection_items(collection_items):
     return link_tuples
 
 
-def write_workshop_file(filename, header, link_tuples):
+def write_workshop_file(filename, workshop_collection):
     try:
         f = open(filename, 'w')
         function_to_use = f.write
@@ -95,44 +98,23 @@ def write_workshop_file(filename, header, link_tuples):
         quiet_print("Failed to open file {} for writing... Defaulting to stdout!".format(filename))
         function_to_use = quiet_print
 
+    header = get_header(workshop_collection['title'], workshop_collection['url'])
+    
     function_to_use(header)
 
-    for link_tuple in link_tuples:
-        line = RESOURCE_LINE.format(link_tuple[0], link_tuple[1])
+    for item in workshop_collection['items']:
+        line = RESOURCE_LINE.format(item['id'], item['name'])
 
         function_to_use(line)
 
     if function_to_use != quiet_print:
+        quiet_print('\nWorkshop file written to {}'.format(filename))
         f.write('\n')
         f.close()
        
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Generates workshop.lua files for GMod servers.')
-
-    parser.add_argument('-o', '--output_dir', dest='output_directory',
-                        help='The output directory to send the file to. Defaults to current working directory.',
-                        default='.')
-    parser.add_argument('-f', '--filename', dest='filename',
-                        help='The filename to write to. Defaults to "workshop.lua".',
-                        default='workshop.lua')
-    parser.add_argument('-i', '--id', dest='collection_id',
-                        help="The collection ID to replicate in the generated LUA file. Defaults to my favorite server's collection",
-                        default='1182709177')
-
-    parser.add_argument('-q', '--quiet', dest='quiet_mode', help='Want this darn script to shutup (no output)? Set this flag!', action='store_true', default=False)
-
-    return parser.parse_args()
-    
-
-
-if __name__ == "__main__":
-
-    args = parse_args()
-
-    QUIET_MODE = args.quiet_mode
-
-    collection_url = get_collection_url(args.collection_id)
+def get_workshop_collection(collection_id):
+    collection_url = get_collection_url(collection_id)
 
     site_content = get_site_content(collection_url)
 
@@ -144,9 +126,45 @@ if __name__ == "__main__":
 
     workshop_title = get_workshop_title_from_soup(soup)
 
-    header = get_header(workshop_title, collection_url)
+    collection = {}
+    collection['title'] = workshop_title
+    collection['url']   = collection_url
+    collection['items'] = []
+
+    for link_tuple in link_tuples:
+        item = {'id': link_tuple[0], 'name': link_tuple[1]}
+
+        collection['items'].append(item)
+
+    return collection
+
+
+
+if __name__ == "__main__":
+    IS_MAIN = True
+    
+    parser = argparse.ArgumentParser(description='Generates workshop.lua files for GMod servers.')
+    
+    parser.add_argument('-o', '--output_dir', dest='output_directory',
+                        help='The output directory to send the file to. Defaults to current working directory.',
+                        default='.')
+    parser.add_argument('-f', '--filename', dest='filename',
+                        help='The filename to write to. Defaults to "workshop.lua".',
+                        default='workshop.lua')
+    parser.add_argument('-i', '--id', dest='collection_id',
+                        help="The collection ID to replicate in the generated LUA file. Defaults to my favorite server's collection",
+                        default='1182709177')
+    
+    parser.add_argument('-q', '--quiet', dest='quiet_mode', help='Want this darn script to shutup (no output)? Set this flag!', action='store_true', default=False)
+
+    args = parser.parse_args()
+
+
+    QUIET_MODE = args.quiet_mode
 
     filename = '{}/{}'.format(args.output_directory, args.filename)
 
-    write_workshop_file(filename, header, link_tuples)
+    workshop_collection = get_workshop_collection(args.collection_id)
+
+    write_workshop_file(filename, workshop_collection)
 
