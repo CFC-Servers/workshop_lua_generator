@@ -1,7 +1,7 @@
 # workshop_lua_generator
 A script written in Python that generates a GarrysMod server's `workshop.lua` (found in /lua/autorun/server)  automatically from their collection URL.
 
-Server's use this file to send their clients the workshop addons that are necessary to play on their server.
+Servers use this file to send their clients the workshop addons that are necessary to play on their server.
 
 ### Requirements: 
 * Python 3.x (*might* work with 2.7.x)
