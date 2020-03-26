@@ -45,8 +45,8 @@ class WorkshopGenerator():
             self.filename = filename
         if collection_id:
             self.collection_id = collection_id
-        if supress_output:
-            self.quiet_mode = supress_output
+        if suppress_output:
+            self.quiet_mode = suppress_output
         if output_directory:
             self.output_directory = output_directory
 
